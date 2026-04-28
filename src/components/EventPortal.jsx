@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
-import { ChevronLeft, GraduationCap, Trophy, Microscope, Mic, ArrowRight, X, Trash2, Eye, EyeOff, Plus, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ChevronLeft, GraduationCap, Trophy, Microscope, Mic, ArrowRight, X, Trash2, Eye, EyeOff, Plus, CheckCircle2, AlertCircle, Download, Timer } from 'lucide-react';
+import * as XLSX from 'xlsx'; 
 
 // --- FIREBASE SETUP ---
 import { initializeApp } from "firebase/app";
@@ -83,6 +84,62 @@ const events = [
   }
 ];
 
+// --- COUNTDOWN TIMER COMPONENT ---
+const CountdownTimer = ({ targetDate }) => {
+  const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+
+  function calculateTimeLeft() {
+    const difference = +new Date(targetDate) - +new Date();
+    let timeLeft = {};
+
+    if (difference > 0) {
+      timeLeft = {
+        days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+        hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+        minutes: Math.floor((difference / 1000 / 60) % 60),
+        seconds: Math.floor((difference / 1000) % 60)
+      };
+    }
+    return timeLeft;
+  }
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setTimeLeft(calculateTimeLeft());
+    }, 1000);
+    return () => clearTimeout(timer);
+  });
+
+  const timerComponents = [];
+  Object.keys(timeLeft).forEach((interval) => {
+    if (!timeLeft[interval] && timeLeft[interval] !== 0 && interval !== 'seconds') {
+      // Ensure we always show at least hours, minutes, seconds even if 0
+    }
+    timerComponents.push(
+      <div key={interval} className="flex flex-col items-center justify-center p-2 bg-white/5 border border-white/10 rounded-xl w-16 sm:w-20 shadow-inner">
+        <span className="text-2xl sm:text-3xl font-bold text-[#f7c948] tabular-nums tracking-tighter">
+          {timeLeft[interval] !== undefined ? String(timeLeft[interval]).padStart(2, '0') : '00'}
+        </span>
+        <span className="text-[9px] sm:text-[10px] uppercase tracking-widest text-white/50 mt-1">{interval}</span>
+      </div>
+    );
+  });
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+      className="flex flex-col items-center mb-10 z-10"
+    >
+      <div className="flex items-center gap-2 mb-3 text-[#f7c948]/80 text-sm font-medium tracking-widest uppercase">
+        <Timer size={16} /> Registrations Close In
+      </div>
+      <div className="flex justify-center gap-2 sm:gap-3">
+        {timerComponents.length ? timerComponents : <span className="text-[#f7c948] text-xl font-bold px-6 py-3 bg-white/5 border border-[#f7c948]/30 rounded-full">The Fest Has Begun! 🎉</span>}
+      </div>
+    </motion.div>
+  );
+};
+
 // --- 3D INTERACTIVE CARD COMPONENT ---
 const EventCard3D = ({ event, onClick }) => {
   const x = useMotionValue(0);
@@ -145,7 +202,7 @@ const PartyConfetti = () => {
             opacity: 0,
             scale: Math.random() * 1.5 + 0.5,
             x: (Math.random() - 0.5) * window.innerWidth,
-            y: (Math.random() - 0.5) * window.innerHeight - 200, // Shoots mostly upwards
+            y: (Math.random() - 0.5) * window.innerHeight - 200, 
             rotate: Math.random() * 360
           }}
           transition={{ duration: 1.5 + Math.random() * 2, ease: "easeOut" }}
@@ -156,7 +213,6 @@ const PartyConfetti = () => {
     </div>
   );
 };
-
 
 const EventPortal = () => {
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -173,8 +229,8 @@ const EventPortal = () => {
   // Revealed Phones State
   const [revealedPhones, setRevealedPhones] = useState(new Set());
 
-  // --- NEW: Custom Toast & Confetti State ---
-  const [toast, setToast] = useState(null); // { message: string, type: 'success' | 'error' }
+  // Toast & Confetti State
+  const [toast, setToast] = useState(null); 
   const [showConfetti, setShowConfetti] = useState(false);
 
   // Database States
@@ -198,12 +254,12 @@ const EventPortal = () => {
   // --- HELPER: Trigger Animations ---
   const showToastMsg = (message, type = 'success') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3500); // Auto-hide after 3.5s
+    setTimeout(() => setToast(null), 3500);
   };
 
   const triggerPartyPop = () => {
     setShowConfetti(true);
-    setTimeout(() => setShowConfetti(false), 4000); // Hide after animation finishes
+    setTimeout(() => setShowConfetti(false), 4000); 
   };
 
   // --- PREVENT BACKGROUND SCROLLING WHEN MODAL IS OPEN ---
@@ -213,9 +269,7 @@ const EventPortal = () => {
     } else {
       document.body.style.overflow = 'unset';
     }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
+    return () => { document.body.style.overflow = 'unset'; };
   }, [regModalType]);
 
   // --- FETCH DATA FROM FIREBASE ---
@@ -300,7 +354,65 @@ const EventPortal = () => {
     }
   };
 
-  // --- DYNAMIC FOOD FEST FORM HELPERS ---
+  // --- EXCEL DOWNLOAD HANDLER ---
+  const handleDownloadSheet = (collectionType) => {
+    const pass = window.prompt("Enter admin password to download the data sheet:");
+    if (pass === null) return;
+    
+    if (pass !== "2000") {
+      showToastMsg("Incorrect password.", "error");
+      return;
+    }
+
+    let excelData = [];
+    let filename = "event_data.xlsx";
+
+    if (collectionType === 'pubg') {
+      filename = "PUBG_Registrations.xlsx";
+      excelData = pubgTeams.map(team => {
+        const p = team.players || [];
+        return {
+          "Team Name": team.teamName || '',
+          "Player 1": p[0]?.name || '',
+          "Phone 1": p[0]?.phone || '',
+          "Player 2": p[1]?.name || '',
+          "Phone 2": p[1]?.phone || '',
+          "Player 3": p[2]?.name || '',
+          "Phone 3": p[2]?.phone || '',
+          "Player 4": p[3]?.name || '',
+          "Phone 4": p[3]?.phone || ''
+        };
+      });
+    } else if (collectionType === 'food') {
+      filename = "Food_Fest_Registrations.xlsx";
+      excelData = foodFestTeams.map(team => {
+        const members = (team.players || []).map(p => `${p.name} (${p.phone})`).join(" | ");
+        return {
+          "Stall / Team Name": team.teamName || '',
+          "Members (Name & Phone)": members
+        };
+      });
+    } else if (collectionType === 'annual') {
+      filename = "Annual_Day_Registrations.xlsx";
+      excelData = annualDayRegs.map(reg => ({
+        "Category": reg.category || '',
+        "Participant Name": reg.participantName || '',
+        "Phone Number": reg.phone || ''
+      }));
+    }
+
+    if (excelData.length === 0) {
+      showToastMsg("No data available to download.", "error");
+      return;
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Registrations");
+    XLSX.writeFile(workbook, filename);
+    showToastMsg("Download started successfully!", "success");
+  };
+
   const addFoodMember = () => {
     setFoodData(prev => ({ ...prev, players: [...prev.players, { name: '', phone: '' }] }));
   };
@@ -310,7 +422,6 @@ const EventPortal = () => {
 
   return (
     <>
-      {/* --- CONFETTI ANIMATION --- */}
       {showConfetti && <PartyConfetti />}
 
       {/* --- ANIMATED TOAST NOTIFICATION --- */}
@@ -353,7 +464,6 @@ const EventPortal = () => {
                 <button onClick={() => setRegModalType('none')} className="text-white/60 hover:text-white"><X size={24} /></button>
               </div>
 
-              {/* SELECTION MODAL (Event 1) */}
               {regModalType === 'select_event1' && (
                 <div className="flex flex-col gap-4">
                   <button onClick={() => setRegModalType('pubg')} className="p-5 bg-white/5 border border-white/10 rounded-xl hover:border-[#60a5fa] hover:bg-[#60a5fa]/10 transition-all text-left">
@@ -367,7 +477,6 @@ const EventPortal = () => {
                 </div>
               )}
               
-              {/* PUBG FORM */}
               {regModalType === 'pubg' && (
                 <form onSubmit={(e) => handleSubmit(e, "pubgTeams", pubgData, setPubgData, {teamName: '', players: [{name:'', phone:''},{name:'', phone:''},{name:'', phone:''},{name:'', phone:''}]})} className="space-y-6">
                   <div>
@@ -387,7 +496,6 @@ const EventPortal = () => {
                 </form>
               )}
 
-              {/* FOOD FEST FORM (Dynamic) */}
               {regModalType === 'food' && (
                 <form onSubmit={(e) => handleSubmit(e, "foodFestTeams", foodData, setFoodData, {teamName: '', players: [{name:'', phone:''}]})} className="space-y-6">
                   <div>
@@ -416,7 +524,6 @@ const EventPortal = () => {
                 </form>
               )}
 
-              {/* ANNUAL DAY FORM */}
               {regModalType === 'annual' && (
                 <form onSubmit={(e) => handleSubmit(e, "annualDayRegs", annualData, setAnnualData, {participantName: '', phone: '', category: 'Solo Singing'})} className="space-y-6">
                   <div>
@@ -441,19 +548,43 @@ const EventPortal = () => {
         )}
       </AnimatePresence>
 
-      {/* --- MAIN APP CONTAINER --- */}
       <div style={{ perspective: 1500 }} className="min-h-screen bg-[#0a1a2e] font-sans text-slate-100 overflow-x-hidden relative">
         
-        {/* --- SPLASH SCREEN --- */}
+        {/* --- SPLASH SCREEN WITH LOADING INDICATOR --- */}
         <AnimatePresence>
           {showSplash && (
-            <motion.div exit={{ opacity: 0, scale: 1.2, filter: "blur(10px)" }} transition={{ duration: 0.8 }} className="fixed inset-0 z-50 flex flex-col items-center justify-center from-[#1a3a5c] via-[#0d2137] to-[#0a1a2e]">
+            <motion.div exit={{ opacity: 0, scale: 1.2, filter: "blur(10px)" }} transition={{ duration: 0.8 }} className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0a1a2e] bg-gradient-to-b from-[#1a3a5c] via-[#0d2137] to-[#0a1a2e]">
               <motion.div className="flex flex-col items-center px-4 text-center">
                 <motion.div initial={{ rotateY: 180, scale: 0.5, opacity: 0 }} animate={{ rotateY: 0, scale: 1, opacity: 1 }} transition={{ duration: 1.5, type: "spring", bounce: 0.4 }} className="w-40 h-40 md:w-48 md:h-48 rounded-full border-4 border-[#f7c948]/80 overflow-hidden mb-6 shadow-[0_0_80px_rgba(247,201,72,0.3)] bg-[#1a3a5c]">
                   <img src="/s.jpeg" alt="Welcome" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
                 </motion.div>
                 <motion.h1 initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5 }} className="font-serif text-[#f7c948] text-3xl md:text-5xl font-bold leading-tight mb-3 drop-shadow-[0_5px_15px_rgba(0,0,0,0.5)]">SNJPSNMS Trust</motion.h1>
                 <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} className="text-white/60 tracking-[0.2em] md:tracking-[0.3em] uppercase text-xs md:text-sm">Degree College Nidsoshi</motion.p>
+                
+                {/* ADDED: LOADING BAR AND TEXT */}
+                <motion.div 
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }} 
+                  transition={{ delay: 1.5 }} 
+                  className="mt-12 flex flex-col items-center"
+                >
+                  <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden relative shadow-inner">
+                    <motion.div
+                      initial={{ x: "-100%" }}
+                      animate={{ x: "0%" }}
+                      transition={{ duration: 2, ease: "easeInOut" }}
+                      className="absolute top-0 left-0 h-full w-full bg-[#f7c948] rounded-full shadow-[0_0_10px_rgba(247,201,72,0.8)]"
+                    />
+                  </div>
+                  <motion.p
+                    animate={{ opacity: [0.4, 1, 0.4] }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                    className="text-[#f7c948]/80 text-[10px] tracking-widest uppercase mt-4 font-bold"
+                  >
+                    Loading Event Portal...
+                  </motion.p>
+                </motion.div>
+
               </motion.div>
             </motion.div>
           )}
@@ -468,13 +599,17 @@ const EventPortal = () => {
                 {stars.map((star) => ( <motion.div key={star.id} className="absolute bg-[#f7c948] rounded-full" style={{ width: star.size, height: star.size, top: `${star.top}%`, left: `${star.left}%` }} animate={{ opacity: [0.1, 0.8, 0.1], scale: [1, 1.5, 1] }} transition={{ duration: star.duration, repeat: Infinity, delay: star.delay }} /> ))}
                 <div className="absolute top-10 left-10 w-96 h-96 rounded-full bg-[#f7c948]/5 blur-[100px] animate-pulse" />
               </div>
-              <motion.div initial={{ y: -30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }} className="flex flex-col md:flex-row items-center gap-5 mb-6 z-10 pt-10">
+
+              <motion.div initial={{ y: -30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }} className="flex flex-col md:flex-row items-center gap-5 mb-8 z-10 pt-10">
                 <div className="w-24 h-24 rounded-full bg-[#f7c948]/10 border-2 border-[#f7c948]/30 flex items-center justify-center p-1 shadow-[0_0_30px_rgba(247,201,72,0.15)]"><img className='w-full h-full object-cover rounded-full' src="/clglogo.jpeg" alt="Logo" /></div>
                 <div className="text-center md:text-left">
                   <h1 className="font-serif text-[#f7c948] text-2xl md:text-4xl font-bold leading-tight">SNJPSNMS Trust</h1>
                   <p className="text-white/70 text-sm md:text-md tracking-widest uppercase mt-2">Degree College Nidsoshi</p>
                 </div>
               </motion.div>
+
+              <CountdownTimer targetDate="2026-05-05T10:00:00" />
+
               <div className="w-24 h-px bg-gradient-to-r from-transparent via-[#f7c948]/50 to-transparent mb-10 z-10" />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full max-w-3xl z-10 pb-10">
                 {events.map((event, idx) => ( <motion.div key={event.id} initial={{ opacity: 0, y: 40, rotateX: 20 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} transition={{ delay: 0.3 + idx * 0.1 }}><EventCard3D event={event} onClick={openEventDetails} /></motion.div> ))}
@@ -485,14 +620,12 @@ const EventPortal = () => {
 
             /* DETAIL PAGE */
             <motion.div key="details" initial={{ opacity: 0, rotateY: 20, x: 100, z: -200 }} animate={{ opacity: 1, rotateY: 0, x: 0, z: 0 }} exit={{ opacity: 0, rotateY: 20, x: 100, z: -200 }} transition={{ duration: 0.5 }} className="flex flex-col min-h-screen bg-gradient-to-b from-[#0d2137] to-[#0a1a2e] relative z-20">
-              {/* Top Bar */}
               <div className="bg-white/5 border-b border-white/5 px-6 py-4 flex items-center gap-4 backdrop-blur-md sticky top-0 z-30 shadow-xl">
                 <button onClick={closeEventDetails} className="flex items-center gap-2 px-4 py-2 bg-[#f7c948]/10 border border-[#f7c948]/30 rounded-xl text-[#f7c948] text-sm font-semibold hover:bg-[#f7c948]/20 transition-all"><ChevronLeft size={18} /> Back</button>
                 <h2 className="font-serif text-[#f7c948] font-bold text-lg hidden sm:block">{selectedEvent.title}</h2>
               </div>
 
               <div className="flex-1 p-6 md:p-10 max-w-4xl mx-auto w-full">
-                {/* Event Header */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 mb-10 pb-10 border-b border-white/10">
                   <motion.div layoutId={`icon-container-${selectedEvent.id}`} className="w-20 h-20 rounded-2xl flex items-center justify-center text-4xl border border-white/20 shadow-[0_20px_40px_rgba(0,0,0,0.4)] overflow-hidden shrink-0" style={{ background: selectedEvent.iconBg }}><motion.div layoutId={`icon-text-${selectedEvent.id}`}>{selectedEvent.iconText}</motion.div></motion.div>
                   <div>
@@ -501,7 +634,6 @@ const EventPortal = () => {
                   </div>
                 </div>
 
-                {/* Event Info */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
                   {[{ label: "Date", val: selectedEvent.date }, { label: "Venue", val: selectedEvent.venue }, { label: "Time", val: selectedEvent.time }].map((info, i) => (
                     <motion.div key={i} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 + i * 0.1 }} className="p-5 bg-white/5 border border-white/10 rounded-2xl">
@@ -513,14 +645,12 @@ const EventPortal = () => {
 
                 <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="text-white/80 leading-relaxed mb-12 text-[16px]">{selectedEvent.desc}</motion.p>
 
-                {/* Highlights */}
                 <div className="flex flex-wrap gap-3 mb-16">
                   {selectedEvent.highlights.map((h, i) => (
                     <motion.span key={i} initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.6 + i * 0.05 }} className="px-5 py-2.5 bg-gradient-to-br from-white/10 to-white/5 border border-white/10 text-white rounded-full text-sm font-medium">{h}</motion.span>
                   ))}
                 </div>
 
-                {/* Dynamic Registration Buttons */}
                 {selectedEvent.id === 1 && (
                   <motion.button onClick={() => setRegModalType('select_event1')} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }} className="w-full sm:w-auto px-12 py-5 bg-gradient-to-r from-[#f7c948] to-[#ffdb69] text-[#0a1a2e] rounded-2xl font-bold text-lg tracking-wide shadow-xl flex items-center justify-center gap-3 mb-16">
                     {selectedEvent.reg} <ArrowRight size={20} />
@@ -533,14 +663,17 @@ const EventPortal = () => {
                   </motion.button>
                 )}
 
-                {/* --- REGISTERED TEAMS DISPLAY AREA --- */}
-
-                {/* Event 1: PUBG & FOOD FEST TABS */}
+                {/* Event 1 Tabs */}
                 {selectedEvent.id === 1 && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} className="mt-10 border-t border-white/10 pt-10">
-                    <div className="flex gap-4 mb-8">
-                      <button onClick={() => setActiveTab('pubg')} className={`px-6 py-3 rounded-full font-bold text-sm transition-all ${activeTab === 'pubg' ? 'bg-[#60a5fa] text-[#0a1a2e]' : 'bg-white/5 text-white/50 hover:text-white'}`}>PUBG Squads ({pubgTeams.length})</button>
-                      <button onClick={() => setActiveTab('food')} className={`px-6 py-3 rounded-full font-bold text-sm transition-all ${activeTab === 'food' ? 'bg-[#fbbf24] text-[#0a1a2e]' : 'bg-white/5 text-white/50 hover:text-white'}`}>Food Teams ({foodFestTeams.length})</button>
+                    <div className="flex flex-wrap justify-between items-center gap-4 mb-8">
+                      <div className="flex gap-4">
+                        <button onClick={() => setActiveTab('pubg')} className={`px-6 py-3 rounded-full font-bold text-sm transition-all ${activeTab === 'pubg' ? 'bg-[#60a5fa] text-[#0a1a2e]' : 'bg-white/5 text-white/50 hover:text-white'}`}>PUBG Squads ({pubgTeams.length})</button>
+                        <button onClick={() => setActiveTab('food')} className={`px-6 py-3 rounded-full font-bold text-sm transition-all ${activeTab === 'food' ? 'bg-[#fbbf24] text-[#0a1a2e]' : 'bg-white/5 text-white/50 hover:text-white'}`}>Food Teams ({foodFestTeams.length})</button>
+                      </div>
+                      <button onClick={() => handleDownloadSheet(activeTab)} className="flex items-center gap-2 px-4 py-2 bg-[#f7c948]/10 text-[#f7c948] border border-[#f7c948]/30 rounded-lg hover:bg-[#f7c948]/20 transition-all text-sm font-bold">
+                        <Download size={16} /> Download {activeTab === 'pubg' ? 'PUBG' : 'Food'} Excel
+                      </button>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -590,7 +723,13 @@ const EventPortal = () => {
                 {/* Event 3: ANNUAL DAY REGISTRATIONS */}
                 {selectedEvent.id === 3 && annualDayRegs.length > 0 && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} className="mt-10 border-t border-white/10 pt-10">
-                    <h3 className="font-serif text-[#f7c948] text-2xl font-bold mb-6">Registered Performances ({annualDayRegs.length})</h3>
+                    <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
+                      <h3 className="font-serif text-[#f7c948] text-2xl font-bold">Registered Performances ({annualDayRegs.length})</h3>
+                      <button onClick={() => handleDownloadSheet('annual')} className="flex items-center gap-2 px-4 py-2 bg-[#f7c948]/10 text-[#f7c948] border border-[#f7c948]/30 rounded-lg hover:bg-[#f7c948]/20 transition-all text-sm font-bold">
+                        <Download size={16} /> Download Excel
+                      </button>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {annualDayRegs.map((reg, idx) => (
                         <div key={reg.id || idx} className="bg-white/5 border border-white/10 rounded-xl p-5 relative group flex flex-col">
